@@ -40,6 +40,7 @@ name = get_test_data('KTLX20130520_201643_V06.gz', as_file_obj=False)
 f = Level2File('C:/data/KGRR20190912_002621_V06')
 
 # extract "constant" rda properties such as lon/lat
+# this is needed to map radar data to lon/lat
 rda_info = f.sweeps[0][0]
 rda_lon = rda_info.vol_consts.lon
 rda_lat = rda_info.vol_consts.lat
@@ -50,9 +51,36 @@ sweeps = {}
 
 ###########################################
 
-
 def build_radar_data_array(sweep=0,moment=b'REF'):
+    """
+    Requires
+    ----------
+    f: file object for NEXRAD_Level_2 file
+    rda_lon, rda_lat:  longitude/latitude of radar in decimal degrees
+    
 
+    Parameters
+    ----------
+    sweep : integer, optional
+        Selects sweep from the f.sweeps array
+    moment : string, optional
+        Some sweeps have velocity data, but not all due to split cut
+        volume coverage patterns
+
+    Returns
+    -------
+    az : numpy array
+        all radials in the given sweep in degrees
+    gates : numpy array
+        all range gates along a radial in meters
+    lons : numpy array
+        
+    lats : numpy array
+        DESCRIPTION.
+    data : TYPE
+        DESCRIPTION.
+
+    """
 
     az = np.array([ray[0].az_angle for ray in f.sweeps[sweep]])
     hdr = f.sweeps[sweep][1][4][moment][0]
@@ -61,19 +89,42 @@ def build_radar_data_array(sweep=0,moment=b'REF'):
     data = np.ma.array(moment_data)
     data[np.isnan(data)] = np.ma.masked
     lons,lats = azimuth_range_to_lat_lon(az, gates*1000, rda_lon, rda_lat, geod=None)
-
     
     return az, gates, lons, lats, data
 
 
-def sweep_info(f,elevation_limit=3):
+def sweep_info(f,elevation_angle_limit=3):
+    """
+    Builds a dictionary consisting of information for each sweep at
+    or below the 
+    
+    Parameters
+    ----------
+    f : file object
+        The currently open NEXRAD_Level_2 file
+    elevation_limit : integer or float, optional
+        The elevation angle limit at which to process data. Typically,
+        we don't care about plotting data at greater elevation angles.
+
+    Returns
+    -------
+    sweeps_dict : dictionary
+        Contains information pertaining to each sweep that can be
+        retrieved later for plotting. Dictionary keys are integers
+        representing the index number of the f.sweeps array, including:
+            
+        
+
+    """
     sweeps_dict = {}
     for s in range(0,len(f.sweeps)):
         this_elevation =  f.sweeps[s][0][0].el_angle
         rounded_elevation = int(10*this_elevation)
 
-        if this_elevation < elevation_limit:
+        if this_elevation < elevation_angle_limit:
             try:
+                # "test" array used only here to determine if
+                # VEL data exist in the current sweep
                 test = f.sweeps[s][1][4][b'VEL'][0]
                 sweep_type = 'Doppler'
                 az,gates,lons,lats,data = build_radar_data_array(sweep=s,moment=b'VEL')
@@ -96,39 +147,47 @@ def sweep_info(f,elevation_limit=3):
 
     return sweeps_dict
 
-def plot_extent(lons,lats,rda_lon,rda_lat,factor):
+
+
+def plot_extent(lons,lats,rda_lon,rda_lat,fraction):
+
     """
+    Based on lats,lons arrays that indicate areal extent of data,
+    Applies a fraction to this extent for plotting purposes
+    
     Parameters
     ----------
-    lons : TYPE
-        DESCRIPTION.
-    lats : TYPE
-        DESCRIPTION.
-    rda_lon : TYPE
-        DESCRIPTION.
-    rda_lat : TYPE
-        DESCRIPTION.
-    factor : TYPE
-        DESCRIPTION.
+    lons, lats : numpy arrays
+        lons, lats of data points
+
+    rda_lon, rda_lat : float
+        location of radar in decimal degrees longitude,latitude
+
+    fraction : float (between 0 and 1)
+        fraction of full lon/lat domain axes to plot.
+        Example: 0.5 means half the full range of lons/lats data,
+        and roughly one quarter or the original area.
+
 
     Returns
     -------
-    xmin : TYPE
-        DESCRIPTION.
-    xmax : TYPE
-        DESCRIPTION.
-    ymin : TYPE
-        DESCRIPTION.
-    ymax : TYPE
-        DESCRIPTION.
+    Tuple of extent to plot centered around rda location. Consists of:
+
+    xmin, xmax : floats
+        Minimum, maximum longitudes to plot in decimal degrees
+
+    ymin, ymax : floats
+        Minimum, maximum latitudes to plot in decimal degrees
+
 
     """
-    lon_offset = factor * (lons.max() - rda_lon)
-    lat_offset = factor * (lats.max() - rda_lat)
+    lon_offset = fraction * (lons.max() - rda_lon)
+    lat_offset = fraction * (lats.max() - rda_lat)
     xmin = rda_lon - lon_offset 
     xmax = rda_lon + lon_offset
     ymin = rda_lat - lat_offset 
     ymax = rda_lat + lat_offset
+
     return (xmin,xmax,ymin,ymax)
 
 
@@ -146,8 +205,6 @@ plt.suptitle('{}'.format(str(f.stid)), fontsize=14)
 plt.labelsize : 8
 plt.tick_params(labelsize=8)
 
-
-subset = ['AzShear_Storm','DivShear_Storm']
 for y,a in zip([0,1],axes.ravel()):
     this_sweep = sweeps_dict[y]
     this_sweep['sweep_type']
